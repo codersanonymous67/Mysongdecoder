@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    <title>Decoder Pro | Video</title>
+    
+    <link rel="manifest" href="data:application/manifest+json,{'name':'Decoder Pro','short_name':'Decoder','start_url':'.','display':'standalone','background_color':'#000000','theme_color':'#1DB954'}">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root { --spotify-green: #1DB954; }
+        body { 
+            background: #000; 
+            color: #fff; 
+            font-family: ui-sans-serif, system-ui, sans-serif; 
+            height: 100dvh; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            overflow: hidden;
+            padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0;
+        }
+        .video-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* Shows full video frame */
+        }
+        .ui-overlay {
+            position: relative;
+            z-index: 10;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 20%, transparent 80%, rgba(0,0,0,0.9) 100%);
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            pointer-events: none;
+        }
+        .ui-overlay * { pointer-events: auto; }
+        .lyrics-container {
+            mask-image: linear-gradient(to bottom, transparent, black 25%, black 75%, transparent);
+            -webkit-mask-image: linear-gradient(to bottom, transparent, black 25%, black 75%, transparent);
+            scrollbar-width: none;
+        }
+        .lyric-line { transition: all 0.4s; opacity: 0.3; transform: scale(0.9); text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
+        .lyric-line.active { opacity: 1; transform: scale(1.1); color: var(--spotify-green); }
+        input[type="range"] { -webkit-appearance: none; width: 100%; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; background: #fff; border-radius: 50%; }
+    </style>
+</head>
+<body>
+
+    <!-- Unified Media Engine -->
+    <div id="media-portal" class="video-container hidden">
+        <video id="main-video" playsinline></video>
+    </div>
+
+    <input type="file" id="file-input" accept="video/*,audio/*" class="hidden">
+
+    <!-- Start Screen -->
+    <div id="screen-upload" class="flex flex-col items-center justify-center p-8 w-full max-w-md z-50">
+        <h1 class="text-6xl font-black italic mb-2 tracking-tighter">DECODER</h1>
+        <p class="text-zinc-500 mb-12 text-xs tracking-widest uppercase">Video & Audio Pro</p>
+        <button id="trigger-upload" class="w-full bg-zinc-900 border border-zinc-800 p-12 rounded-[3rem] flex flex-col items-center gap-6 shadow-2xl">
+            <div class="w-20 h-20 bg-green-500 rounded-3xl flex items-center justify-center shadow-[0_0_30px_rgba(34,197,94,0.4)]">
+                <svg width="40" height="40" fill="black" viewBox="0 0 256 256"><path d="M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm-48,128v48H96V160Zm48,48H160V160h48v48ZM48,160H96v48H48Zm160-64H48V48H208Z"></path></svg>
+            </div>
+            <span class="font-black uppercase tracking-widest text-sm">Select Media</span>
+        </button>
+        <p id="offline-status" class="mt-8 text-[10px] text-zinc-600 uppercase tracking-[0.2em]">System Initializing...</p>
+    </div>
+
+    <!-- Interface Overlay -->
+    <div id="screen-player" class="hidden ui-overlay w-full h-full flex flex-col p-6">
+        <header class="flex justify-between items-center py-4">
+            <button onclick="location.reload()" class="bg-black/40 p-2 rounded-full backdrop-blur-md">
+                <svg width="20" height="20" fill="white" viewBox="0 0 256 256"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"></path></svg>
+            </button>
+            <div class="px-4 py-1 bg-black/40 backdrop-blur-md rounded-full text-[10px] font-bold tracking-widest text-white uppercase border border-white/10">Now Playing</div>
+            <div class="w-8"></div>
+        </header>
+
+        <div id="lyrics-scroll" class="lyrics-container flex-1 overflow-y-auto flex flex-col items-center space-y-8 py-40 px-6">
+            <!-- Lyrics appear here -->
+        </div>
+
+        <div class="pb-10 space-y-6">
+            <div class="text-center px-4">
+                <h2 id="track-name" class="text-xl font-black italic truncate drop-shadow-lg">Media Title</h2>
+                <button id="trigger-lyrics" class="mt-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-lg text-[10px] font-bold uppercase tracking-tighter text-zinc-300">Edit Lyrics</button>
+            </div>
+            
+            <div class="px-2">
+                <input type="range" id="seeker" value="0" min="0" step="0.1">
+            </div>
+
+            <div class="flex justify-center items-center gap-8">
+                <button id="btn-play" class="w-20 h-20 bg-white rounded-full flex items-center justify-center text-black shadow-xl scale-100 active:scale-90 transition-transform">
+                    <svg id="play-icon" width="36" height="36" fill="currentColor" viewBox="0 0 256 256"><path d="M240,128a15.74,15.74,0,0,1-7.6,13.51L88.32,229.75a16,16,0,0,1-24.32-13.51V40a16,16,0,0,1,24.32-13.51L232.4,114.49A15.74,15.74,0,0,1,240,128Z"></path></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lyrics Entry -->
+    <div id="modal-lyrics" class="hidden fixed inset-0 bg-black/98 z-[200] flex flex-col p-8 pt-20 animate-in fade-in duration-300">
+        <h3 class="text-sm font-bold uppercase tracking-widest mb-4 text-green-500">Lyrics Editor</h3>
+        <textarea id="lyrics-input" class="flex-1 bg-zinc-900 border border-zinc-800 rounded-3xl p-6 text-white text-lg font-bold focus:outline-none focus:border-green-500" placeholder="Paste lyrics line by line..."></textarea>
+        <button id="save-lyrics" class="mt-6 bg-green-500 text-black font-black py-5 rounded-full uppercase tracking-widest shadow-[0_0_20px_rgba(34,197,94,0.3)]">Save & Sync</button>
+    </div>
+
+    <script>
+        // --- OFFLINE ENGINE ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                const swCode = `
+                    const CACHE_NAME = 'decoder-v2';
+                    self.addEventListener('install', e => e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(['${window.location.href}', 'https://cdn.tailwindcss.com']))));
+                    self.addEventListener('fetch', e => e.respondWith(caches.match(e.request).then(r => r || fetch(e.request))));
+                `;
+                const blob = new Blob([swCode], {type: 'text/javascript'});
+                navigator.serviceWorker.register(URL.createObjectURL(blob)).then(() => {
+                    document.getElementById('offline-status').innerText = "✓ System Online & Offline Ready";
+                });
+            });
+        }
+
+        const media = document.getElementById('main-video');
+        const fileInput = document.getElementById('file-input');
+        const playBtn = document.getElementById('btn-play');
+        const seeker = document.getElementById('seeker');
+        const playIcon = `<path d="M240,128a15.74,15.74,0,0,1-7.6,13.51L88.32,229.75a16,16,0,0,1-24.32-13.51V40a16,16,0,0,1,24.32-13.51L232.4,114.49A15.74,15.74,0,0,1,240,128Z"></path>`;
+        const pauseIcon = `<path d="M216,48V208a16,16,0,0,1-16,16H160a16,16,0,0,1-16-16V48a16,16,0,0,1,16-16h40A16,16,0,0,1,216,48ZM96,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H96a16,16,0,0,0,16-16V48A16,16,0,0,0,96,32Z"></path>`;
+
+        document.getElementById('trigger-upload').onclick = () => fileInput.click();
+        
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                media.src = url;
+                document.getElementById('track-name').innerText = file.name.replace(/\.[^/.]+$/, "");
+                document.getElementById('screen-upload').classList.add('hidden');
+                document.getElementById('media-portal').classList.remove('hidden');
+                document.getElementById('screen-player').classList.remove('hidden');
+                media.play();
+            }
+        };
+
+        playBtn.onclick = () => {
+            if (media.paused) {
+                media.play();
+                document.getElementById('play-icon').innerHTML = pauseIcon;
+            } else {
+                media.pause();
+                document.getElementById('play-icon').innerHTML = playIcon;
+            }
+        };
+
+        media.onplay = () => document.getElementById('play-icon').innerHTML = pauseIcon;
+        media.onpause = () => document.getElementById('play-icon').innerHTML = playIcon;
+
+        media.ontimeupdate = () => {
+            seeker.value = media.currentTime;
+            const lines = document.querySelectorAll('.lyric-line');
+            if (lines.length > 0) {
+                const progress = media.currentTime / media.duration;
+                const activeIndex = Math.min(Math.floor(progress * lines.length), lines.length - 1);
+                
+                lines.forEach((line, i) => {
+                    if (i === activeIndex) {
+                        line.classList.add('active');
+                        line.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    } else {
+                        line.classList.remove('active');
+                    }
+                });
+            }
+        };
+
+        media.onloadedmetadata = () => seeker.max = media.duration;
+        seeker.oninput = () => media.currentTime = seeker.value;
+
+        document.getElementById('trigger-lyrics').onclick = () => document.getElementById('modal-lyrics').classList.remove('hidden');
+        document.getElementById('save-lyrics').onclick = () => {
+            const text = document.getElementById('lyrics-input').value.trim();
+            const container = document.getElementById('lyrics-scroll');
+            container.innerHTML = '';
+            if (text) {
+                text.split('\n').forEach(line => {
+                    const p = document.createElement('p');
+                    p.className = 'lyric-line text-3xl font-black text-center leading-tight';
+                    p.innerText = line;
+                    container.appendChild(p);
+                });
+            }
+            document.getElementById('modal-lyrics').classList.add('hidden');
+        };
+
+        // Handle window resize for video aspect ratio
+        window.addEventListener('resize', () => {
+            media.style.height = window.innerHeight + 'px';
+        });
+    </script>
+</body>
+</html>
+
